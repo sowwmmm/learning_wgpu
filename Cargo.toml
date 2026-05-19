@@ -1,0 +1,58 @@
+[package]
+name = "learn_wgpu"
+version = "0.1.0"
+edition = "2024"
+
+# =========================================
+# Dependencies
+# =========================================
+
+[dependencies]
+anyhow = "1.0"
+winit = { version = "0.30", features = ["android-native-activity"] }
+env_logger = "0.10"
+log = "0.4"
+wgpu = "28.0"
+pollster = "0.3"
+
+# =========================================
+# DEV PROFILE
+# Fast iteration
+# =========================================
+
+[profile.dev]
+
+opt-level = 1
+
+debug = 1
+
+incremental = true
+
+codegen-units = 256
+
+overflow-checks = false
+
+debug-assertions = true
+
+lto = false
+
+panic = "abort"
+
+# =========================================
+# RELEASE PROFILE
+# Runtime performance
+# =========================================
+
+[profile.release]
+
+opt-level = 3
+
+lto = "thin"
+
+codegen-units = 1
+
+panic = "abort"
+
+strip = true
+
+incremental = false
