@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::*;
-use wgpu::*;
+use wgpu::{util::DeviceExt, *};
 use winit::{
     application::ApplicationHandler,
     event::*,
@@ -10,6 +10,22 @@ use winit::{
     window::{Window, WindowAttributes},
 };
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+unsafe impl bytemuck::Zeroable for Vertex {}
+unsafe impl bytemuck::Pod for Vertex {}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
+
 pub struct State {
     surface: Surface<'static>,
     device: wgpu::Device,
@@ -17,12 +33,15 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
     window: Arc<Window>,
-    render_pipeline: wgpu::RenderPipeline
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl State {
     async fn new(window: Arc<Window>) -> anyhow::Result<Self>
     {
+        let num_vertices = VERTICES.len() as u32;
 
         let size = window.inner_size();
         // get instance
@@ -83,7 +102,7 @@ impl State {
             vertex: VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[],
+                buffers: &[Vertex::desc()],
                 compilation_options: PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState { // 3.
@@ -115,6 +134,29 @@ impl State {
             cache: None,
         }
     );
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let vertex_buffer_layout = VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        };
         // return the state
         Ok(Self {
             surface,
@@ -123,7 +165,9 @@ impl State {
             config,
             is_surface_configured: false,
             render_pipeline,
-            window
+            vertex_buffer,
+            window,
+            num_vertices,
         })
     }
     pub fn resize(&mut self, width: u32, height: u32) 
@@ -195,8 +239,13 @@ impl State {
 
                             multiview_mask: None,
                 });
+                // render()
                 _render_pass.set_pipeline(&self.render_pipeline);
-                _render_pass.draw(0..3, 0..1);
+                // NEW!
+                _render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                // render
+                _render_pass.draw(0..self.num_vertices, 0..1);
+
             }
                     self.queue.submit(std::iter::once(
                     encoder.finish(),
@@ -296,7 +345,20 @@ impl ApplicationHandler for App {
         }
     }
 }
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
 fn main() -> Result<()>
 {
     env_logger::init();
